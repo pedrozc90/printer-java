@@ -73,7 +73,7 @@ public abstract class SatoMessage {
 
         @Override
         public String toString() {
-            return String.format("%s{bytes = %d, ps = %s, rs = %s, re = %s, pe = %s, en = %s, bt= %s, q = '%s', raw = %s}",
+            return String.format("%s{ bytes = %d, ps = %s, rs = %s, re = %s, pe = %s, en = %s, bt = %s, q = '%s', raw = '%s' }",
                 getClass().getSimpleName(),
                 bytes,
                 ps,
@@ -115,7 +115,7 @@ public abstract class SatoMessage {
 
         @Override
         public String toString() {
-            return String.format("%s{bytes = %d, wr = %s, es = %s, epc = %s, tid =  %s, raw = %s}",
+            return String.format("%s{ bytes = %d, wr = %s, es = %s, epc = %s, tid =  %s, raw = %s }",
                 getClass().getSimpleName(),
                 bytes,
                 wr,

@@ -10,12 +10,13 @@ import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.Charset;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+
+import static com.contare.printers.core.objects.ControlCmd.EOF;
 
 public abstract class BaseMock implements AutoCloseable {
 
@@ -98,7 +99,15 @@ public abstract class BaseMock implements AutoCloseable {
         logger.debugf("Stopped");
     }
 
-    public abstract RawPacket onMessage(final RawPacket packet) throws IOException;
+    /**
+     * Parse commands from raw bytes, handling both framed (STX... ETX) and unframed messages
+     */
+    public abstract List<RawPacket> parseData(final byte[] data, final Charset charset);
+
+    /**
+     * Handle individual command and send appropriate response
+     */
+    public abstract RawPacket handlePacket(final RawPacket packet) throws IOException;
 
     private class Acceptor implements Runnable {
 
@@ -123,6 +132,7 @@ public abstract class BaseMock implements AutoCloseable {
             } catch (IOException e) {
                 if (socket.isClosed()) {
                     // normal shutdown
+                    logger.debug("Socket closed, stopping acceptor");
                 } else {
                     logger.error("Accept error", e);
                 }
@@ -148,13 +158,13 @@ public abstract class BaseMock implements AutoCloseable {
         @Override
         public void run() {
             try {
-                byte[] tmp = new byte[512];
-                int read;
+                final byte[] tmp = new byte[1024];
 
                 // read loop - process commands as they arrive
-                while ((read = in.read(tmp)) != ControlCmd.EOF) {
+                int read;
+                while ((read = in.read(tmp)) != EOF) {
                     if (read > 0) {
-                        byte[] data = Arrays.copyOf(tmp, read);
+                        final byte[] data = Arrays.copyOf(tmp, read);
                         processData(data);
                     }
                 }
@@ -176,124 +186,14 @@ public abstract class BaseMock implements AutoCloseable {
         private void processData(final byte[] data) throws IOException {
             logger.debugf("Received data: %s", Arrays.toString(data));
 
-            final List<RawPacket> packets = parseCommands(data);
+            final List<RawPacket> packets = parseData(data, charset);
 
             for (RawPacket packet : packets) {
                 logger.infof("Processing command: %s", packet);
-                handleCommand(packet);
-            }
-        }
-
-        /**
-         * Parse commands from raw bytes, handling both framed (STX... ETX) and unframed messages
-         */
-        private List<RawPacket> parseCommands(final byte[] data) {
-            final List<RawPacket> out = new ArrayList<>();
-
-            int i = 0;
-            while (i < data.length) {
-                // Check if this is a framed message (starts with STX)
-                if (data[i] == ControlCmd.STX) {
-                    // Find the ETX
-                    int etxIndex = -1;
-                    for (int j = i + 1; j < data.length; j++) {
-                        if (data[j] == ControlCmd.ETX) {
-                            etxIndex = j;
-                            break;
-                        }
-                    }
-
-                    if (etxIndex != -1) {
-                        // Extract framed content (between STX and ETX)
-                        byte[] framedContent = Arrays.copyOfRange(data, i + 1, etxIndex);
-                        extractCommandsFromBytes(framedContent, out);
-                        i = etxIndex + 1;
-                    } else {
-                        // No ETX found, treat rest as content
-                        byte[] content = Arrays.copyOfRange(data, i + 1, data.length);
-                        extractCommandsFromBytes(content, out);
-                        break;
-                    }
-                } else {
-                    // Unframed message - extract commands from current position
-                    byte[] content = Arrays.copyOfRange(data, i, data.length);
-                    extractCommandsFromBytes(content, out);
-                    break;
+                final RawPacket response = handlePacket(packet);
+                if (response != null) {
+                    send(response);
                 }
-            }
-
-            return out;
-        }
-
-        /**
-         * Extract individual commands from bytes (handles multi-byte commands like DC2+PG)
-         */
-        private void extractCommandsFromBytes(final byte[] bytes, final List<RawPacket> out) {
-            int i = 0;
-
-            while (i < bytes.length) {
-                byte current = bytes[i];
-
-                // Handle DC2 (0x12) commands. Prefer DC2 + two-letter commands (e.g. DC2 + 'P' 'H').
-                if (current == ControlCmd.DC2) {
-                    // If there's room for two letters, and they look like letters, consume both.
-                    if (i + 2 < bytes.length) {
-                        byte b1 = bytes[i + 1];
-                        byte b2 = bytes[i + 2];
-                        if (isAlphaByte(b1) && isAlphaByte(b2)) {
-                            final RawPacket packet = new RawPacket(new byte[]{ current, b1, b2 }, charset);
-                            out.add(packet);
-                            i += 3;
-                            continue;
-                        }
-                    }
-
-                    // Fallback: DC2 + single letter
-                    if (i + 1 < bytes.length) {
-                        byte next = bytes[i + 1];
-                        final RawPacket packet = new RawPacket(new byte[]{ current, next }, charset);
-                        out.add(packet);
-                        i += 2;
-                    } else {
-                        i++;
-                    }
-
-                    continue;
-                }
-
-                // DC1 or DLE followed by a letter (two-byte commands)
-                if ((current == ControlCmd.DC1 || current == ControlCmd.DLE) && i + 1 < bytes.length) {
-                    byte next = bytes[i + 1];
-                    final RawPacket packet = new RawPacket(new byte[]{ current, next }, charset);
-                    out.add(packet);
-                    i += 2;
-                    continue;
-                }
-
-                // Single-byte DLE representation (if needed)
-                if (current == ControlCmd.DLE) {
-                    final RawPacket packet = new RawPacket(current, charset);
-                    out.add(packet);
-                    i++;
-                    continue;
-                }
-
-                // Other characters (could be part of print data) - skip for mock
-                i++;
-            }
-        }
-
-        private boolean isAlphaByte(byte b) {
-            return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z');
-        }
-
-        /**
-         * Handle individual command and send appropriate response
-         */
-        private void handleCommand(final RawPacket payload) throws IOException {
-            final RawPacket response = onMessage(payload);
-            if (response != null) {
-                send(response);
             }
         }
 

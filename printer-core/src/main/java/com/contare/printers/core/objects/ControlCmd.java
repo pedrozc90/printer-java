@@ -12,5 +12,5 @@ public class ControlCmd {
     public static final byte NAK = 0x15; // Not Acknowledge (decimal = 15, unicode = '\\u0015')
     public static final byte CR = 0x0D;  // Carriage Return (decimal = 13, unicode = '\\u000D')
     public static final byte LF = 0x0A;  // Line Feed ( decimal = 10, unicode = '\\u000A')
-
+    public static final byte ESC = 0x1B;
 }

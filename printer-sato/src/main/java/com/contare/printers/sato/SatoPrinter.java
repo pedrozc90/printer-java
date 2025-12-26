@@ -97,6 +97,7 @@ public class SatoPrinter extends BasePrinter {
                     // check printer status
                     if (m instanceof SatoMessage.PrinterInfo) {
                         final SatoMessage.PrinterInfo obj = (SatoMessage.PrinterInfo) m;
+                        logger.infof("Printer status: %s", obj);
 
                         if (!Objects.equals(obj, prev)) {
                             remaining = obj.getQ();
@@ -105,6 +106,7 @@ public class SatoPrinter extends BasePrinter {
 
                         if (remaining == 0 && obj.getPs() == PrinterStatus.STANDBY) {
                             stableCount++;
+                            logger.debugf("Printer status is STANDBY, count: %d", stableCount);
                             if (stableCount >= (MAX_COUNTER - 1)) {
                                 printing = false;
                                 break _loop;
@@ -118,6 +120,7 @@ public class SatoPrinter extends BasePrinter {
                     // collect epc
                     else if (m instanceof SatoMessage.TagInfo) {
                         final SatoMessage.TagInfo obj = (SatoMessage.TagInfo) m;
+                        logger.infof("Tag info: %s", obj);
 
                         final String epc = obj.getEpc();
                         final String tid = obj.getTid();
@@ -260,7 +263,7 @@ public class SatoPrinter extends BasePrinter {
      */
     protected SatoMessage.TagInfo queryEPCAndTID() throws PrinterException {
         // DC2 + PK = command returns the status of RFID tag write by <IP0> command and EPC/TID. (pg. 444, 451)
-        final String cmd = "\u0002\u0012PG\u0012PK\u0003";
+        final String cmd = "\u0002\u0012PK\u0003";
         final List<SatoMessage> messages = sendCommandAndWait(cmd, 1_000);
         for (SatoMessage m : messages) {
             if (m instanceof SatoMessage.TagInfo) {
@@ -326,7 +329,7 @@ public class SatoPrinter extends BasePrinter {
      */
     protected boolean queryReset() throws PrinterException {
         // DC2 + DC = This command resets the printer to its default state. (pg. 400)
-        final String cmd = "\u0002\0012DC\u0003";
+        final String cmd = "\u0002\u0012DC\u0003";
         return sendControlCommand(cmd, 500);
     }
 
@@ -341,7 +344,7 @@ public class SatoPrinter extends BasePrinter {
      */
     protected boolean queryPowerOff() throws PrinterException {
         // DC2 + DD = This command powers off the printer. (pg. 400)
-        final String cmd = "\u0002\0012DD\u0003";
+        final String cmd = "\u0002\u0012DD\u0003";
         return sendControlCommand(cmd, 500);
     }
 

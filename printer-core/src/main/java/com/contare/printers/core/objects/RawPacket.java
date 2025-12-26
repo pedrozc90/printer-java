@@ -7,6 +7,9 @@ import lombok.EqualsAndHashCode;
 import java.nio.charset.Charset;
 import java.util.Arrays;
 
+import static com.contare.printers.core.objects.ControlCmd.ETX;
+import static com.contare.printers.core.objects.ControlCmd.STX;
+
 @Data
 @EqualsAndHashCode
 public class RawPacket {
@@ -39,17 +42,19 @@ public class RawPacket {
     public boolean isFramed() {
         final int length = length();
         return (length > 2)
-            && (bytes[0] == 0x02)
-            && (bytes[length - 1] == 0x03);
+            && (bytes[0] == STX)
+            && (bytes[length - 1] == ETX);
     }
 
     @Override
     public String toString() {
-        return String.format("%s{ bytes = %s, charset = %s, ts = %s, len = %d, hex = '%s', text = '%s' }", getClass().getSimpleName(), Arrays.toString(bytes), charset, timestamp, length(), toHex(), toText());
+        final String clazz = getClass().getSimpleName();
+        return String.format("%s{ bytes = %s, charset = %s, ts = %s, len = %d, hex = '%s', text = '%s' }", clazz, Arrays.toString(bytes), charset, timestamp, length(), toHex(), toText());
     }
 
     public static RawPacket of(final String value, final Charset charset) {
-
+        final byte[] bytes = value.getBytes(charset);
+        return new RawPacket(bytes, charset);
     }
 
 }
